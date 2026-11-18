@@ -1,0 +1,20 @@
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+# User audio stays outside version control.
+data/audio/*
+!data/audio/.gitkeep
+# Recorded charts and personal device/calibration settings are local.
+data/charts/*.json
+!data/charts/schema-example.json
+data/charts/*.bak
+# Model weights, sidecars, and optimizer/data artifacts are private/local.
+data/models/*
+!data/models/.gitkeep
+config.local.json
+*.tmp

@@ -1,0 +1,5 @@
+# Install the appropriate official CPU/CUDA/MPS Torch build first if desired.
+# CPU: python -m pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+# A +cpu / +cuXXX local build satisfies this portable version range.
+-r requirements.txt
+torch>=2.6,<3.0

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "time_unit": "seconds",
+  "track": {
+    "kind": "synthetic",
+    "id": "synthetic-v1-48000-2304000-120-2",
+    "name": "test_track",
+    "audio_path": null,
+    "sample_rate": 48000,
+    "duration": 48.0,
+    "bpm": 120.0,
+    "lead_in": 2.0,
+    "generator_version": 1
+  },
+  "lanes": 4,
+  "keys": ["d", "f", "j", "k"],
+  "notes": [
+    {"time": 2.0, "lane": 0, "duration": 0.0, "type": "Tap"},
+    {"time": 2.5, "lane": 1, "duration": 0.0, "type": "Tap"},
+    {"time": 3.0, "lane": 2, "duration": 0.5, "type": "Hold"},
+    {"time": 3.5, "lane": 3, "duration": 0.0, "type": "Tap"}
+  ],
+  "metadata": {"example_only": true, "note": "Short format example, not a recorded human chart."}
+}
