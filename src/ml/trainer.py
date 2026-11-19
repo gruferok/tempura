@@ -18,7 +18,7 @@ import numpy as np
 
 from ..storage import CHART_DIR, write_json
 from . import (CHECKPOINT_VERSION, FEATURE_CACHE, FEATURE_VERSION, FRAME_RATE, MAX_LANES,
-               MODEL_PATH, check_cancel, metadata_path, report, require_torch)
+               MODEL_PATH, check_cancel, metadata_path, read_checkpoint, report, require_torch)
 from .dataset import SequenceDataset, TrainingExample, load_examples, make_bootstrap_examples
 from .features import FEATURE_CONFIG
 from .model import ModelConfig, RhythmCRNN, select_device
@@ -178,8 +178,9 @@ def save_checkpoint(model: RhythmCRNN, path: str | Path, metadata: dict, *, canc
     return path
 
 
-def load_checkpoint(path: str | Path = MODEL_PATH, *, device="auto") -> tuple[RhythmCRNN, dict]:
-    path = Path(path)
+def load_checkpoint(path: str | Path | None = None, *, device="auto") -> tuple[RhythmCRNN, dict]:
+    # Read-side two-step lookup: user model under ROOT first, bundled default second.
+    path = read_checkpoint(path)
     if not path.is_file():
         raise ValueError(f"Модель не найдена: {path}. Сначала выполните Train / --train.")
     try:

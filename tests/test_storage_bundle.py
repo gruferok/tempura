@@ -89,3 +89,36 @@ def test_frozen_simulation_seeds_into_tempura_home(monkeypatch, tmp_path):
     assert (root / "config.json").is_file()
     assert (root / "data" / "charts" / "nested" / "demo.json").is_file()
     assert not (root / "data" / "models").exists() or not any((root / "data" / "models").iterdir())
+
+
+def test_resolve_resource_two_step_and_write_default(monkeypatch, tmp_path):
+    bundle, root = _bundle(tmp_path)
+    monkeypatch.setattr(storage, "ROOT", root)
+    monkeypatch.setattr(storage, "BUNDLE_ROOT", bundle)
+    # no user copy: the read-only bundle default is found
+    assert storage.resolve_resource("data/models/m.pt") == bundle / "data" / "models" / "m.pt"
+    # user copy wins (ROOT first)
+    (root / "data" / "models").mkdir(parents=True)
+    (root / "data" / "models" / "m.pt").write_bytes(b"user")
+    assert storage.resolve_resource("data/models/m.pt") == root / "data" / "models" / "m.pt"
+    # missing everywhere: the creation default stays in ROOT (writes never go to BUNDLE_ROOT)
+    assert storage.resolve_resource("data/models/new.pt") == root / "data" / "models" / "new.pt"
+
+
+def test_read_checkpoint_two_step(monkeypatch, tmp_path):
+    import src.ml as ml
+    bundle, root = _bundle(tmp_path)
+    (bundle / "data" / "models" / "rhythm_model.pt").write_bytes(b"bundled")
+    monkeypatch.setattr(storage, "ROOT", root)
+    monkeypatch.setattr(storage, "BUNDLE_ROOT", bundle)
+    monkeypatch.setattr(ml, "MODEL_DIR", root / "data" / "models")
+    monkeypatch.setattr(ml, "MODEL_PATH", root / "data" / "models" / "rhythm_model.pt")
+    # bundled default is readable when the user has no model yet
+    assert ml.read_checkpoint() == bundle / "data" / "models" / "rhythm_model.pt"
+    # the user model wins; training writes stay in ROOT
+    (root / "data" / "models").mkdir(parents=True)
+    (root / "data" / "models" / "rhythm_model.pt").write_bytes(b"user")
+    assert ml.read_checkpoint() == root / "data" / "models" / "rhythm_model.pt"
+    # an explicit path outside data/models is used as-is (no fallback)
+    explicit = root / "elsewhere.pt"
+    assert ml.read_checkpoint(explicit) == explicit
