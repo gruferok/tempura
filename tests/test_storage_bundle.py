@@ -32,7 +32,7 @@ def test_seed_copies_nested_files_and_never_overwrites(monkeypatch, tmp_path):
     storage.seed_from_bundle()
     assert (root / "config.json").read_text(encoding="utf-8") == '{"user": true}'
     assert (root / "data" / "charts" / "nested" / "demo.json").is_file()
-    assert (root / "data" / "models" / "m.pt").is_file()
+    assert not (root / "data" / "models" / "m.pt").exists()  # models are never duplicated into ROOT
 
     (root / "data" / "charts" / "nested" / "demo.json").write_text('{"edited": 1}', encoding="utf-8")
     storage.seed_from_bundle()  # idempotent: user edits survive a second run

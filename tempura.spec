@@ -28,7 +28,6 @@ for pkg in ("_sounddevice_data", "_soundfile_data"):
 for rel_path, target_dir in (
     ("config.json", "."),
     ("data/charts", "data/charts"),
-    ("data/models", "data/models"),
 ):
     src_path = project_root / rel_path
     if src_path.exists():

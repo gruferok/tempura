@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,7 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 from src.audio_engine import AudioTrack, generate_test_track
 from src.diagnostics import environment_report
-from src.storage import CHART_DIR, Config, ROOT, seed_from_bundle, write_json
+from src.storage import BUNDLE_ROOT, CHART_DIR, Config, ROOT, seed_from_bundle, write_json
 
 
 def draw_menu(app, track: AudioTrack, audio_status: str = "") -> dict:
@@ -71,6 +72,18 @@ def track_for_chart(app, chart) -> AudioTrack | None:
             return None
         source = selected
     return AudioTrack.from_file(source, app.config.sample_rate)
+
+
+def _import_status(names) -> dict:
+    """Import each module and report ok or the error; never raises (CI must not fail on missing audio devices)."""
+    status = {}
+    for name in names:
+        try:
+            __import__(name)
+            status[name] = "ok"
+        except Exception as error:
+            status[name] = f"error: {type(error).__name__}: {error}"
+    return status
 
 
 def headless_smoke(config: Config, screenshot: str | None = None) -> dict:
@@ -255,12 +268,16 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--output используется с --generate.")
     if offline_ai and (args.chart or args.audio):
         parser.error("Offline AI использует --generate AUDIO; --audio/--chart предназначены для меню.")
+    seed_from_bundle()  # frozen only; must run before any config/data read, including --diagnose
     if args.diagnose:
         report = environment_report()
         report["paths"] = {"frozen": bool(getattr(sys, "frozen", False)), "ROOT": str(ROOT),
+                           "BUNDLE_ROOT": str(BUNDLE_ROOT),
                            "config_json": (ROOT / "config.json").exists(),
                            "data_charts": (ROOT / "data" / "charts").is_dir(),
                            "data_models": (ROOT / "data" / "models").is_dir()}
+        report["imports"] = _import_status(("librosa", "soundfile", "sounddevice", "numba"))
+        report["imports"]["torch"] = "absent (ok, optional)" if importlib.util.find_spec("torch") is None else "present"
         if args.report:
             write_json(args.report, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -269,7 +286,6 @@ def main(argv: list[str] | None = None) -> int:
         if offline_ai:
             print(json.dumps(run_ml_cli(args), ensure_ascii=False, indent=2))
             return 0
-        seed_from_bundle()
         config = Config.load()
         if args.device is not None:
             device = int(args.device) if args.device.isdigit() else args.device

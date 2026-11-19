@@ -37,7 +37,10 @@ def _resolve_roots() -> tuple[Path, Path]:
         local = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Tempura"
         if _writable_dir(local):
             return local, bundle
-        return Path(tempfile.gettempdir()) / "Tempura", bundle
+        import warnings
+        fallback = Path(tempfile.gettempdir()) / "Tempura"
+        warnings.warn(f"Tempura: no writable data folder; using {fallback}", RuntimeWarning)
+        return fallback, bundle
     dev = Path(__file__).resolve().parents[1]
     return (Path(override).expanduser().resolve() if override else dev), dev
 
@@ -48,7 +51,7 @@ CHART_DIR = ROOT / "data" / "charts"
 
 
 def seed_from_bundle() -> None:
-    """Copy missing defaults (config, charts, models) from BUNDLE_ROOT into ROOT. Never overwrites."""
+    """Copy missing defaults (config.json, data/charts) from BUNDLE_ROOT into ROOT. Never overwrites."""
     import shutil
     if BUNDLE_ROOT.resolve() == ROOT.resolve():
         return
@@ -56,7 +59,8 @@ def seed_from_bundle() -> None:
     if bundle_cfg.is_file() and not CONFIG_PATH.exists():
         ROOT.mkdir(parents=True, exist_ok=True)
         shutil.copy2(bundle_cfg, CONFIG_PATH)
-    for rel_dir in ("data/charts", "data/models"):
+    # Models are not copied: they can be large and must not be duplicated; the app reads them from ROOT only.
+    for rel_dir in ("data/charts",):
         src_dir = BUNDLE_ROOT / rel_dir
         if not src_dir.is_dir():
             continue
