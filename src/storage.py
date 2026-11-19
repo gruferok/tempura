@@ -23,6 +23,27 @@ CONFIG_PATH = ROOT / "config.json"
 CHART_DIR = ROOT / "data" / "charts"
 
 
+def seed_from_bundle() -> None:
+    """Frozen only: copy default config/charts/models from the bundle into ROOT (beside the exe) once.
+
+    Existing user files are never overwritten.
+    """
+    import shutil
+    if BUNDLE_ROOT == ROOT:
+        return
+    bundle_cfg, root_cfg = BUNDLE_ROOT / "config.json", ROOT / "config.json"
+    if bundle_cfg.is_file() and not root_cfg.exists():
+        shutil.copy2(bundle_cfg, root_cfg)
+    for rel_dir in ("data/charts", "data/models"):
+        src_dir, dst_dir = BUNDLE_ROOT / rel_dir, ROOT / rel_dir
+        if src_dir.is_dir():
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            for item in src_dir.iterdir():
+                target = dst_dir / item.name
+                if item.is_file() and not target.exists():
+                    shutil.copy2(item, target)
+
+
 def write_json(path: str | Path, value: Any) -> Path:
     """Write beside the destination, then atomically replace it (never partial JSON)."""
     path = Path(path)

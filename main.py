@@ -12,7 +12,7 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 from src.audio_engine import AudioTrack, generate_test_track
 from src.diagnostics import environment_report
-from src.storage import CHART_DIR, Config, ROOT, write_json
+from src.storage import CHART_DIR, Config, ROOT, seed_from_bundle, write_json
 
 
 def draw_menu(app, track: AudioTrack, audio_status: str = "") -> dict:
@@ -265,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         if offline_ai:
             print(json.dumps(run_ml_cli(args), ensure_ascii=False, indent=2))
             return 0
+        seed_from_bundle()
         config = Config.load()
         if args.device is not None:
             device = int(args.device) if args.device.isdigit() else args.device
