@@ -16,7 +16,7 @@ import pygame
 
 from .audio_engine import AudioTrack, generate_test_track
 from .chart import Chart, DEFAULT_LAYOUTS
-from .ml import Cancelled, MODEL_PATH, metadata_path, read_checkpoint
+from .ml import Cancelled, MODEL_PATH, metadata_path
 from .storage import CHART_DIR, read_json
 from .ui import App, BORDER, CYAN, GOLD, MUTED, RED, TEXT, VIOLET, choose_keys, file_picker, key_label
 
@@ -124,7 +124,7 @@ def inspect_studio(charts_dir=CHART_DIR, checkpoint_path=MODEL_PATH) -> dict:
     from .ml.model import select_device
 
     accepted, skipped = catalog_charts(charts_dir)
-    path = read_checkpoint(checkpoint_path)  # ROOT first, then BUNDLE_ROOT
+    path = Path(checkpoint_path)
     metadata = {}
     if metadata_path(path).is_file():
         try:
