@@ -10,39 +10,62 @@ import tempfile
 from typing import Any
 
 import sys
+import tempfile
 
-# Frozen (PyInstaller): user data (config.json, data/) lives beside the executable;
-# bundled read-only resources are under sys._MEIPASS.
-if getattr(sys, "frozen", False):
-    ROOT = Path(sys.executable).resolve().parent
-    BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", ROOT))
-else:
-    ROOT = Path(__file__).resolve().parents[1]
-    BUNDLE_ROOT = ROOT
+
+def _writable_dir(path: Path) -> bool:
+    """Real write probe (os.access lies for Program Files / UAC-virtualised folders)."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path, prefix=".tempura_write_"):
+            pass
+        return True
+    except OSError:
+        return False
+
+
+def _resolve_roots() -> tuple[Path, Path]:
+    """Return (ROOT for user data, BUNDLE_ROOT for read-only defaults). TEMPURA_HOME overrides ROOT."""
+    override = os.environ.get("TEMPURA_HOME")
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        bundle = Path(getattr(sys, "_MEIPASS", exe_dir))
+        if override:
+            return Path(override).expanduser().resolve(), bundle
+        if _writable_dir(exe_dir):
+            return exe_dir, bundle
+        local = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Tempura"
+        if _writable_dir(local):
+            return local, bundle
+        return Path(tempfile.gettempdir()) / "Tempura", bundle
+    dev = Path(__file__).resolve().parents[1]
+    return (Path(override).expanduser().resolve() if override else dev), dev
+
+
+ROOT, BUNDLE_ROOT = _resolve_roots()
 CONFIG_PATH = ROOT / "config.json"
 CHART_DIR = ROOT / "data" / "charts"
 
 
 def seed_from_bundle() -> None:
-    """Frozen only: copy default config/charts/models from the bundle into ROOT (beside the exe) once.
-
-    Existing user files are never overwritten.
-    """
+    """Copy missing defaults (config, charts, models) from BUNDLE_ROOT into ROOT. Never overwrites."""
     import shutil
-    if BUNDLE_ROOT == ROOT:
+    if BUNDLE_ROOT.resolve() == ROOT.resolve():
         return
-    bundle_cfg, root_cfg = BUNDLE_ROOT / "config.json", ROOT / "config.json"
-    if bundle_cfg.is_file() and not root_cfg.exists():
-        shutil.copy2(bundle_cfg, root_cfg)
+    bundle_cfg = BUNDLE_ROOT / "config.json"
+    if bundle_cfg.is_file() and not CONFIG_PATH.exists():
+        ROOT.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(bundle_cfg, CONFIG_PATH)
     for rel_dir in ("data/charts", "data/models"):
-        src_dir, dst_dir = BUNDLE_ROOT / rel_dir, ROOT / rel_dir
-        if src_dir.is_dir():
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            for item in src_dir.iterdir():
-                target = dst_dir / item.name
-                if item.is_file() and not target.exists():
-                    shutil.copy2(item, target)
-
+        src_dir = BUNDLE_ROOT / rel_dir
+        if not src_dir.is_dir():
+            continue
+        for src in src_dir.rglob("*"):
+            if src.is_file():
+                target = ROOT / rel_dir / src.relative_to(src_dir)
+                if not target.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, target)
 
 def write_json(path: str | Path, value: Any) -> Path:
     """Write beside the destination, then atomically replace it (never partial JSON)."""

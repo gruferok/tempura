@@ -1,17 +1,29 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for Tempura Rhythm Lab. Torch is excluded: AI Studio stays optional.
+# PyInstaller spec for Tempura Rhythm Lab (PyInstaller 6.x).
+# Torch is excluded: AI Studio stays optional and is reported as unavailable in the build.
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
-block_cipher = None
 project_root = Path(SPECPATH).resolve()
 
-datas = []
-for pkg in ("librosa", "soundfile", "audioread"):
+datas, binaries = [], []
+
+
+def _collect(fn, package):
+    """Native/data collection is best-effort per package; a missing optional package must not break the spec."""
     try:
-        datas += collect_data_files(pkg)
+        return fn(package)
     except Exception:
-        pass
+        return []
+
+
+for pkg in ("librosa", "soundfile", "audioread"):
+    datas += _collect(collect_data_files, pkg)
+
+# Native audio runtimes: Windows wheels ship PortAudio/libsndfile in these helper packages.
+for pkg in ("_sounddevice_data", "_soundfile_data"):
+    datas += _collect(collect_data_files, pkg)
+    binaries += _collect(collect_dynamic_libs, pkg)
 
 for rel_path, target_dir in (
     ("config.json", "."),
@@ -30,10 +42,7 @@ hiddenimports = [
     "sounddevice",
     "soundfile",
 ]
-try:
-    hiddenimports += collect_submodules("src")
-except Exception:
-    pass
+hiddenimports += _collect(collect_submodules, "src")
 
 excludes = [
     "torch",
@@ -48,21 +57,19 @@ excludes = [
 a = Analysis(
     [str(project_root / "main.py")],
     pathex=[str(project_root)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=excludes,
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
+# console=True keeps --diagnose / --headless-smoke output visible for beta builds.
 exe = EXE(
     pyz,
     a.scripts,
@@ -84,6 +91,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    upx_exclude=[],
     name="TempuraRhythmLab",
 )

@@ -257,6 +257,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Offline AI использует --generate AUDIO; --audio/--chart предназначены для меню.")
     if args.diagnose:
         report = environment_report()
+        report["paths"] = {"frozen": bool(getattr(sys, "frozen", False)), "ROOT": str(ROOT),
+                           "config_json": (ROOT / "config.json").exists(),
+                           "data_charts": (ROOT / "data" / "charts").is_dir(),
+                           "data_models": (ROOT / "data" / "models").is_dir()}
         if args.report:
             write_json(args.report, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
@@ -288,4 +292,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     raise SystemExit(main())
