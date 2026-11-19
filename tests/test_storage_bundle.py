@@ -1,4 +1,6 @@
+import pytest
 import sys
+import tempfile
 from pathlib import Path
 
 import src.storage as storage
@@ -40,6 +42,9 @@ def test_seed_copies_nested_files_and_never_overwrites(monkeypatch, tmp_path):
 
 
 def test_frozen_falls_back_when_exe_dir_not_writable(monkeypatch, tmp_path):
+    # The write probe is tempfile.NamedTemporaryFile(dir=exe_dir) with a unique name;
+    # denying the probe (and Path.touch, if the probe ever regresses to a fixed file)
+    # with PermissionError is the closest emulation of a read-only install folder.
     exe_dir, local = tmp_path / "exe", tmp_path / "local"
     exe_dir.mkdir()
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -47,11 +52,39 @@ def test_frozen_falls_back_when_exe_dir_not_writable(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "meipass"), raising=False)
     monkeypatch.delenv("TEMPURA_HOME", raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(local))
-    real_writable = storage._writable_dir
-    monkeypatch.setattr(storage, "_writable_dir",
-                        lambda p: False if p == exe_dir.resolve() else real_writable(p))
+    real_named_temporary_file = tempfile.NamedTemporaryFile
+
+    def denied_for_exe_dir(*args, dir=None, **kwargs):
+        if dir is not None and Path(dir).resolve() == exe_dir.resolve():
+            raise PermissionError("exe folder is read-only")
+        return real_named_temporary_file(*args, dir=dir, **kwargs)
+
+    def touch_denied(self, *args, **kwargs):
+        raise PermissionError("exe folder is read-only")
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", denied_for_exe_dir)
+    monkeypatch.setattr(Path, "touch", touch_denied)
     root, bundle = storage._resolve_roots()
     assert root == local / "Tempura"
+    assert bundle == tmp_path / "meipass"
+
+
+def test_frozen_falls_back_to_tempdir_with_warning_when_nothing_is_writable(monkeypatch, tmp_path):
+    exe_dir = tmp_path / "exe"
+    exe_dir.mkdir()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(exe_dir / "TempuraRhythmLab.exe"))
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "meipass"), raising=False)
+    monkeypatch.delenv("TEMPURA_HOME", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+
+    def denied(*args, **kwargs):
+        raise PermissionError("nothing is writable")
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", denied)
+    with pytest.warns(RuntimeWarning, match="no writable data folder"):
+        root, bundle = storage._resolve_roots()
+    assert root == Path(tempfile.gettempdir()) / "Tempura"  # last-resort fallback
     assert bundle == tmp_path / "meipass"
 
 
