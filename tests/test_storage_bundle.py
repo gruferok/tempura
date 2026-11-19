@@ -61,3 +61,14 @@ def test_tempura_home_overrides_root(monkeypatch, tmp_path):
     root, _ = storage._resolve_roots()
     assert root == (tmp_path / "home").resolve()
     assert isinstance(root, Path)
+
+
+def test_clean_root_gets_config_after_seed_and_loads(monkeypatch, tmp_path):
+    bundle, root = _bundle(tmp_path)
+    root.rmdir()  # clean machine: ROOT does not exist yet
+    monkeypatch.setattr(storage, "BUNDLE_ROOT", bundle)
+    monkeypatch.setattr(storage, "ROOT", root)
+    monkeypatch.setattr(storage, "CONFIG_PATH", root / "config.json")
+    storage.seed_from_bundle()
+    assert (root / "config.json").read_text(encoding="utf-8") == '{"default": true}'
+    assert storage.Config.load(root / "config.json") is not None

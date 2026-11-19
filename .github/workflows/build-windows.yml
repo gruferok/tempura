@@ -34,6 +34,9 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: pytest -q
 
+      - name: Refuse to build if torch is importable in the build venv
+        run: python -c "import importlib.util,sys; sys.exit(1 if importlib.util.find_spec('torch') else 0)"
+
       - name: Build EXE with PyInstaller
         run: pyinstaller --noconfirm --clean tempura.spec
 

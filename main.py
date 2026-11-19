@@ -286,11 +286,20 @@ def main(argv: list[str] | None = None) -> int:
                            "data_models": (ROOT / "data" / "models").is_dir()}
         report["imports"] = _import_status(("librosa", "soundfile", "sounddevice", "numba"))
         report["imports"]["torch"] = "absent (ok, optional)" if importlib.util.find_spec("torch") is None else "present"
+        problems = [f"import {name} failed: {state}" for name, state in report["imports"].items()
+                    if state != "ok" and name != "torch"]
+        if getattr(sys, "frozen", False) and not (ROOT / "data" / "charts").is_dir() and not BUNDLE_ROOT.joinpath("data", "charts").is_dir():
+            problems.append("bundle has no data/charts")
+        report["problems"] = problems
         report["warnings"] = ([] if report["audio"]["output_devices"] else
-                              ["WARN: no audio output device (expected on headless CI runners); exit code stays 0"])
+                              ["WARN: no audio output device (expected on headless CI runners)"])
         if args.report:
             write_json(args.report, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
+        # Source checkouts only report (a dev box may lack PortAudio). A frozen build must import everything.
+        if problems and getattr(sys, "frozen", False):
+            print("UNEXPECTED: " + "; ".join(problems), file=sys.stderr)
+            return 2
         return 0
     try:
         if offline_ai:

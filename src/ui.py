@@ -52,6 +52,7 @@ class App:
         self.config, self.engine_factory = config, engine_factory
         self.running = True
         self.toast = ""
+        self._text_cache: dict = {}  # rendered glyph surfaces; font.render was ~20% of a frame
 
     @property
     def width(self) -> int:
@@ -67,7 +68,12 @@ class App:
                                    blocksize=c.blocksize, volume=c.volume)
 
     def text(self, value: str, x: float, y: float, size=18, color=TEXT, *, center=False):
-        surface = self.fonts[size].render(str(value), True, color)
+        key = (str(value), size, tuple(color))
+        surface = self._text_cache.get(key)
+        if surface is None:
+            if len(self._text_cache) > 512:
+                self._text_cache.clear()
+            surface = self._text_cache[key] = self.fonts[size].render(str(value), True, color)
         rect = surface.get_rect(center=(round(x), round(y))) if center else surface.get_rect(topleft=(round(x), round(y)))
         self.screen.blit(surface, rect)
         return rect
