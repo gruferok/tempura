@@ -37,17 +37,19 @@ jobs:
       - name: Build EXE with PyInstaller
         run: pyinstaller --noconfirm --clean tempura.spec
 
-      - name: Verify torch is absent from the bundle
+      - name: Verify torch is absent from the bundle and sources are packaged
         shell: pwsh
         run: |
-          $internal = "dist/TempuraRhythmLab/_internal"
-          if (!(Test-Path $internal)) { Write-Error "bundle folder $internal not found"; exit 1 }
-          $torch = Get-ChildItem -Path $internal -Recurse -Directory -Filter "torch" -ErrorAction Stop
-          if ($torch) { Write-Error "torch found in bundle: $($torch[0].FullName)"; exit 1 }
-          $size = (Get-ChildItem -Path "dist/TempuraRhythmLab" -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          $bundle = "dist/TempuraRhythmLab"
+          if (!(Test-Path $bundle)) { Write-Error "bundle folder $bundle not found"; exit 1 }
+          if (!(Test-Path "src/__init__.py")) { Write-Error "src/__init__.py missing: collect_submodules would be empty"; exit 1 }
+          $bad = Get-ChildItem -Path $bundle -Recurse -Force |
+            Where-Object { $_.Name -like "torch" -or $_.Name -like "torch*.dist-info" -or $_.Name -like "nvidia*" }
+          if ($bad) { $bad | ForEach-Object { Write-Host "unexpected: $($_.FullName)" }; Write-Error "torch/CUDA found in bundle"; exit 1 }
+          $size = (Get-ChildItem -Path $bundle -Recurse -File | Measure-Object -Property Length -Sum).Sum
           Write-Host ("Bundle size: {0:N1} MB" -f ($size / 1MB))
 
-      - name: Smoke test built EXE from a foreign working directory
+      - name: Smoke test built EXE - diagnose (from a foreign working directory)
         env:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
@@ -57,13 +59,31 @@ jobs:
           if (!(Test-Path $exe)) { Write-Error "EXE not found at $exe"; exit 1 }
           Push-Location $env:TEMP
           try {
-            & $exe --diagnose
-            if ($LASTEXITCODE -ne 0) { Write-Error "--diagnose failed ($LASTEXITCODE)"; exit $LASTEXITCODE }
-            & $exe --headless-smoke
-            if ($LASTEXITCODE -ne 0) { Write-Error "--headless-smoke failed ($LASTEXITCODE)"; exit $LASTEXITCODE }
+            $out = & $exe --diagnose
+            $code = $LASTEXITCODE
           } finally {
             Pop-Location
           }
+          $out | Out-Host
+          if ($code -ne 0) { Write-Error "--diagnose exited with $code"; exit $code }
+          if (-not ($out | Select-String -Pattern '"frozen": true')) { Write-Error "--diagnose did not report frozen=true"; exit 1 }
+          if (-not ($out | Select-String -Pattern '"torch": "absent')) { Write-Error "--diagnose did not report torch absent"; exit 1 }
+
+      - name: Smoke test built EXE - headless render (from a foreign working directory)
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE "dist/TempuraRhythmLab/TempuraRhythmLab.exe"
+          Push-Location $env:TEMP
+          try {
+            & $exe --headless-smoke
+            $code = $LASTEXITCODE
+          } finally {
+            Pop-Location
+          }
+          if ($code -ne 0) { Write-Error "--headless-smoke exited with $code"; exit $code }
 
       - name: Archive build for upload
         shell: pwsh

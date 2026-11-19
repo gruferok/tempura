@@ -52,6 +52,23 @@ def draw_menu(app, track: AudioTrack, audio_status: str = "") -> dict:
     return buttons
 
 
+def menu_action(events, buttons: dict, default: str | None = None) -> str | None:
+    """Map this frame's events to a menu action. Unmapped keys and clicks outside buttons keep the previous action."""
+    import pygame
+    keys = {pygame.K_1: "calibration", pygame.K_2: "record", pygame.K_3: "play",
+            pygame.K_4: "ai", pygame.K_a: "ai", pygame.K_b: "snap", pygame.K_o: "file",
+            pygame.K_t: "test", pygame.K_ESCAPE: "quit"}
+    action = default
+    for event in events:
+        if event.type == pygame.KEYDOWN and event.key in keys:
+            action = keys[event.key]
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            hit = next((name for name, rect in buttons.items() if rect.collidepoint(event.pos)), None)
+            if hit is not None:
+                action = hit
+    return action
+
+
 def track_for_chart(app, chart) -> AudioTrack | None:
     from src.ui import file_picker
 
@@ -143,16 +160,7 @@ def run_menu(config: Config, audio_path: str | None = None, chart_path: str | No
         launch_chart = Path(chart_path) if chart_path else None
         while app.running:
             buttons = draw_menu(app, track, audio_status)
-            action = "play" if launch_chart else None
-            for event in app.events():
-                if event.type == pygame.KEYDOWN:
-                    action = {pygame.K_1: "calibration", pygame.K_2: "record", pygame.K_3: "play",
-                              pygame.K_4: "ai", pygame.K_a: "ai", pygame.K_b: "snap", pygame.K_o: "file",
-                              pygame.K_t: "test", pygame.K_ESCAPE: "quit"}.get(event.key)
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    hit = next((name for name, rect in buttons.items() if rect.collidepoint(event.pos)), None)
-                    if hit is not None:
-                        action = hit
+            action = menu_action(app.events(), buttons, default="play" if launch_chart else None)
             if not app.running:
                 break
             try:
@@ -278,6 +286,8 @@ def main(argv: list[str] | None = None) -> int:
                            "data_models": (ROOT / "data" / "models").is_dir()}
         report["imports"] = _import_status(("librosa", "soundfile", "sounddevice", "numba"))
         report["imports"]["torch"] = "absent (ok, optional)" if importlib.util.find_spec("torch") is None else "present"
+        report["warnings"] = ([] if report["audio"]["output_devices"] else
+                              ["WARN: no audio output device (expected on headless CI runners); exit code stays 0"])
         if args.report:
             write_json(args.report, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
