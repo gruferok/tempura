@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -10,6 +11,8 @@ import tempfile
 from typing import Any
 
 import sys
+
+_log = logging.getLogger(__name__)
 
 
 def _writable_dir(path: Path) -> bool:
@@ -36,9 +39,8 @@ def _resolve_roots() -> tuple[Path, Path]:
         local = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Tempura"
         if _writable_dir(local):
             return local, bundle
-        import warnings
         fallback = Path(tempfile.gettempdir()) / "Tempura"
-        warnings.warn(f"Tempura: no writable data folder; using {fallback}", RuntimeWarning)
+        _log.warning("Tempura: no writable data folder; using %s", fallback)
         return fallback, bundle
     dev = Path(__file__).resolve().parents[1]
     return (Path(override).expanduser().resolve() if override else dev), dev
@@ -58,9 +60,7 @@ def seed_from_bundle() -> None:
     if bundle_cfg.is_file() and not CONFIG_PATH.exists():
         ROOT.mkdir(parents=True, exist_ok=True)
         shutil.copy2(bundle_cfg, CONFIG_PATH)
-    # Models are not copied: they can be large and must not be duplicated. Model reads
-    # go through resolve_resource() (ROOT first, then BUNDLE_ROOT), so default models
-    # can live in the bundle without ever being copied onto the user's disk.
+    # Models are not copied: they can be large and must not be duplicated; the app reads them from ROOT only.
     for rel_dir in ("data/charts",):
         src_dir = BUNDLE_ROOT / rel_dir
         if not src_dir.is_dir():
@@ -74,7 +74,7 @@ def seed_from_bundle() -> None:
 
 
 def resolve_resource(rel: str | Path) -> Path:
-    """Two-step lookup for bundled resources: user copies under ROOT first, then BUNDLE_ROOT.
+    """Two-step lookup for non-model resources (charts, audio): ROOT first, then BUNDLE_ROOT.
 
     Returns the first existing match; when neither exists it returns ROOT / rel,
     the only location user code may create or write files.

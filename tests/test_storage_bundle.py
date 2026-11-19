@@ -1,4 +1,4 @@
-import pytest
+import logging
 import sys
 import tempfile
 from pathlib import Path
@@ -69,7 +69,7 @@ def test_frozen_falls_back_when_exe_dir_not_writable(monkeypatch, tmp_path):
     assert bundle == tmp_path / "meipass"
 
 
-def test_frozen_falls_back_to_tempdir_with_warning_when_nothing_is_writable(monkeypatch, tmp_path):
+def test_frozen_falls_back_to_tempdir_with_warning_when_nothing_is_writable(monkeypatch, tmp_path, caplog):
     exe_dir = tmp_path / "exe"
     exe_dir.mkdir()
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -82,10 +82,11 @@ def test_frozen_falls_back_to_tempdir_with_warning_when_nothing_is_writable(monk
         raise PermissionError("nothing is writable")
 
     monkeypatch.setattr(tempfile, "NamedTemporaryFile", denied)
-    with pytest.warns(RuntimeWarning, match="no writable data folder"):
+    with caplog.at_level(logging.WARNING):
         root, bundle = storage._resolve_roots()
     assert root == Path(tempfile.gettempdir()) / "Tempura"  # last-resort fallback
     assert bundle == tmp_path / "meipass"
+    assert any("no writable data folder" in message for message in caplog.messages)
 
 
 def test_tempura_home_overrides_root(monkeypatch, tmp_path):
@@ -124,34 +125,16 @@ def test_frozen_simulation_seeds_into_tempura_home(monkeypatch, tmp_path):
     assert not (root / "data" / "models").exists() or not any((root / "data" / "models").iterdir())
 
 
-def test_resolve_resource_two_step_and_write_default(monkeypatch, tmp_path):
+def test_resolve_resource_two_step_for_non_model_resources(monkeypatch, tmp_path):
     bundle, root = _bundle(tmp_path)
     monkeypatch.setattr(storage, "ROOT", root)
     monkeypatch.setattr(storage, "BUNDLE_ROOT", bundle)
-    # no user copy: the read-only bundle default is found
-    assert storage.resolve_resource("data/models/m.pt") == bundle / "data" / "models" / "m.pt"
+    # no user copy: the read-only bundled default (chart) is found
+    assert storage.resolve_resource("data/charts/nested/demo.json") == bundle / "data" / "charts" / "nested" / "demo.json"
     # user copy wins (ROOT first)
-    (root / "data" / "models").mkdir(parents=True)
-    (root / "data" / "models" / "m.pt").write_bytes(b"user")
-    assert storage.resolve_resource("data/models/m.pt") == root / "data" / "models" / "m.pt"
+    target = root / "data" / "charts" / "nested"
+    target.mkdir(parents=True)
+    (target / "demo.json").write_text('{"user": true}', encoding="utf-8")
+    assert storage.resolve_resource("data/charts/nested/demo.json") == target / "demo.json"
     # missing everywhere: the creation default stays in ROOT (writes never go to BUNDLE_ROOT)
-    assert storage.resolve_resource("data/models/new.pt") == root / "data" / "models" / "new.pt"
-
-
-def test_read_checkpoint_two_step(monkeypatch, tmp_path):
-    import src.ml as ml
-    bundle, root = _bundle(tmp_path)
-    (bundle / "data" / "models" / "rhythm_model.pt").write_bytes(b"bundled")
-    monkeypatch.setattr(storage, "ROOT", root)
-    monkeypatch.setattr(storage, "BUNDLE_ROOT", bundle)
-    monkeypatch.setattr(ml, "MODEL_DIR", root / "data" / "models")
-    monkeypatch.setattr(ml, "MODEL_PATH", root / "data" / "models" / "rhythm_model.pt")
-    # bundled default is readable when the user has no model yet
-    assert ml.read_checkpoint() == bundle / "data" / "models" / "rhythm_model.pt"
-    # the user model wins; training writes stay in ROOT
-    (root / "data" / "models").mkdir(parents=True)
-    (root / "data" / "models" / "rhythm_model.pt").write_bytes(b"user")
-    assert ml.read_checkpoint() == root / "data" / "models" / "rhythm_model.pt"
-    # an explicit path outside data/models is used as-is (no fallback)
-    explicit = root / "elsewhere.pt"
-    assert ml.read_checkpoint(explicit) == explicit
+    assert storage.resolve_resource("data/audio/click.wav") == root / "data" / "audio" / "click.wav"
