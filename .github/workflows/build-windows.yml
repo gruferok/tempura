@@ -69,8 +69,12 @@ jobs:
           }
           $out | Out-Host
           if ($code -ne 0) { Write-Error "--diagnose exited with $code"; exit $code }
-          if (-not ($out | Select-String -Pattern '"frozen": true')) { Write-Error "--diagnose did not report frozen=true"; exit 1 }
-          if (-not ($out | Select-String -Pattern '"torch": "absent')) { Write-Error "--diagnose did not report torch absent"; exit 1 }
+          $d = ($out -join "`n") | ConvertFrom-Json
+          if ($d.paths.frozen -ne $true) { Write-Error "--diagnose: paths.frozen is not true (not a packaged run)"; exit 1 }
+          if ($d.imports.torch -notlike "absent*") { Write-Error "--diagnose: torch is not absent from the bundle"; exit 1 }
+          $bad = $d.imports.PSObject.Properties | Where-Object { $_.Name -ne "torch" -and $_.Value -ne "ok" }
+          if ($bad) { $bad | ForEach-Object { Write-Host "import $($_.Name): $($_.Value)" }; Write-Error "--diagnose: packaged imports failed"; exit 1 }
+          if ($d.problems.Count -ne 0) { Write-Error "--diagnose reported problems: $($d.problems -join '; ')"; exit 1 }
 
       - name: Smoke test built EXE - headless render (from a foreign working directory)
         env:

@@ -72,3 +72,20 @@ def test_clean_root_gets_config_after_seed_and_loads(monkeypatch, tmp_path):
     storage.seed_from_bundle()
     assert (root / "config.json").read_text(encoding="utf-8") == '{"default": true}'
     assert storage.Config.load(root / "config.json") is not None
+
+
+def test_frozen_simulation_seeds_into_tempura_home(monkeypatch, tmp_path):
+    bundle, root = _bundle(tmp_path)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(bundle), raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "exe" / "TempuraRhythmLab.exe"))
+    monkeypatch.setenv("TEMPURA_HOME", str(root))
+    resolved_root, resolved_bundle = storage._resolve_roots()
+    assert resolved_root == root.resolve() and resolved_bundle == bundle
+    monkeypatch.setattr(storage, "ROOT", resolved_root)
+    monkeypatch.setattr(storage, "BUNDLE_ROOT", resolved_bundle)
+    monkeypatch.setattr(storage, "CONFIG_PATH", resolved_root / "config.json")
+    storage.seed_from_bundle()
+    assert (root / "config.json").is_file()
+    assert (root / "data" / "charts" / "nested" / "demo.json").is_file()
+    assert not (root / "data" / "models").exists() or not any((root / "data" / "models").iterdir())

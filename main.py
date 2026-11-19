@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import importlib.util
 import json
 import os
@@ -96,7 +97,7 @@ def _import_status(names) -> dict:
     status = {}
     for name in names:
         try:
-            __import__(name)
+            importlib.import_module(name)
             status[name] = "ok"
         except Exception as error:
             status[name] = f"error: {type(error).__name__}: {error}"
@@ -276,28 +277,46 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--output используется с --generate.")
     if offline_ai and (args.chart or args.audio):
         parser.error("Offline AI использует --generate AUDIO; --audio/--chart предназначены для меню.")
-    seed_from_bundle()  # frozen only; must run before any config/data read, including --diagnose
+    seed_error = None
+    try:
+        seed_from_bundle()  # frozen only; must run before any config/data read, including --diagnose
+    except Exception as error:  # reported as a problem below, never a crash before the report
+        seed_error = f"seed_from_bundle failed: {type(error).__name__}: {error}"
     if args.diagnose:
+        frozen = bool(getattr(sys, "frozen", False))
         report = environment_report()
-        report["paths"] = {"frozen": bool(getattr(sys, "frozen", False)), "ROOT": str(ROOT),
-                           "BUNDLE_ROOT": str(BUNDLE_ROOT),
+        report["paths"] = {"frozen": frozen, "ROOT": str(ROOT), "BUNDLE_ROOT": str(BUNDLE_ROOT),
                            "config_json": (ROOT / "config.json").exists(),
                            "data_charts": (ROOT / "data" / "charts").is_dir(),
                            "data_models": (ROOT / "data" / "models").is_dir()}
         report["imports"] = _import_status(("librosa", "soundfile", "sounddevice", "numba"))
-        report["imports"]["torch"] = "absent (ok, optional)" if importlib.util.find_spec("torch") is None else "present"
-        problems = [f"import {name} failed: {state}" for name, state in report["imports"].items()
-                    if state != "ok" and name != "torch"]
-        if getattr(sys, "frozen", False) and not (ROOT / "data" / "charts").is_dir() and not BUNDLE_ROOT.joinpath("data", "charts").is_dir():
+        report["imports"]["torch"] = ("absent (ok, optional)" if importlib.util.find_spec("torch") is None
+                                      else "present")
+        problems, warnings = [], []
+        if seed_error:
+            problems.append(seed_error)
+        for name, state in report["imports"].items():
+            if name == "torch" or state == "ok":
+                continue
+            # Missing PortAudio/libsndfile runtime is an environment fact on a dev box (WARN), but a broken
+            # frozen bundle or any ImportError is a packaging failure (exit 2).
+            if name == "sounddevice" and state.startswith("error: OSError") and not frozen:
+                warnings.append(f"WARN: sounddevice runtime unavailable ({state}); source checkout only")
+            else:
+                problems.append(f"import {name} failed: {state}")
+        try:
+            Config.load()
+        except Exception as error:
+            problems.append(f"config unreadable: {type(error).__name__}: {error}")
+        if not (BUNDLE_ROOT / "data" / "charts").is_dir():
             problems.append("bundle has no data/charts")
-        report["problems"] = problems
-        report["warnings"] = ([] if report["audio"]["output_devices"] else
-                              ["WARN: no audio output device (expected on headless CI runners)"])
+        if not report["audio"]["output_devices"]:
+            warnings.append("WARN: no audio output device (expected on headless CI runners)")
+        report["problems"], report["warnings"] = problems, warnings
         if args.report:
             write_json(args.report, report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        # Source checkouts only report (a dev box may lack PortAudio). A frozen build must import everything.
-        if problems and getattr(sys, "frozen", False):
+        if problems:
             print("UNEXPECTED: " + "; ".join(problems), file=sys.stderr)
             return 2
         return 0
