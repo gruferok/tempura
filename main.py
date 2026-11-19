@@ -203,7 +203,7 @@ def run_menu(config: Config, audio_path: str | None = None, chart_path: str | No
                             run_gameplay(app, chart_track, chart)
             except Exception as error:
                 print(f"{type(error).__name__}: {error}", file=sys.stderr)
-                app.notice("Не удалось выполнить действие", [str(error)[i:i + 100] for i in range(0, len(str(error)), 100)])
+                app.notice("Не удалось выполнить действие", [str(error)])
             app.frame(fast=False)
     finally:
         pygame.quit()

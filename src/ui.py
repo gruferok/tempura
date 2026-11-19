@@ -22,6 +22,63 @@ GOLD = (255, 205, 111)
 LANE_COLORS = [CYAN, VIOLET, (105, 178, 255), (255, 158, 180), GOLD, (154, 228, 137), CYAN, VIOLET]
 
 
+class ButtonHitArea(pygame.Rect):
+    """A real pygame.Rect (so Rect APIs such as contains() accept it) whose hit-test is off when disabled."""
+
+    def __init__(self, rect, *, disabled: bool = False):
+        super().__init__(rect)
+        self.disabled = disabled
+
+    def collidepoint(self, *point) -> bool:
+        return not self.disabled and super().collidepoint(*point)
+
+
+def button_hover(rect, position, *, disabled=False) -> bool:
+    """Disabled controls never retain or acquire hover styling."""
+    return not disabled and rect.collidepoint(position)
+
+
+def wrap_notice_lines(lines, *, max_chars=72, max_width=None, font=None, max_lines=None):
+    """Wrap at word boundaries, hard-wrap long tokens, and preserve paragraph characters."""
+    rows = []
+
+    def fits(value):
+        return (len(value) <= max_chars and
+                (font is None or max_width is None or font.size(value)[0] <= max_width))
+
+    for raw in lines:
+        # Newlines separate visual paragraphs; content within each paragraph is retained.
+        paragraphs = str(raw).splitlines() or [""]
+        for paragraph in paragraphs:
+            remaining = paragraph
+            if not remaining:
+                rows.append("")
+                continue
+            while remaining:
+                end = 0
+                for count in range(1, min(len(remaining), max_chars) + 1):
+                    if font is not None and max_width is not None and font.size(remaining[:count])[0] > max_width:
+                        break
+                    end = count
+                if end == len(remaining):
+                    rows.append(remaining)
+                    break
+                if end == 0:
+                    end = 1  # Always make progress, even on an unusually narrow window.
+                # Prefer a whitespace boundary; if the token itself is too long, break it.
+                boundary = next((i for i in range(end - 1, 0, -1) if remaining[i].isspace()), None)
+                split = boundary + 1 if boundary is not None else end
+                rows.append(remaining[:split])
+                remaining = remaining[split:]
+
+    if max_lines is not None and len(rows) > max_lines:
+        if max_lines <= 0:
+            return []
+        rows = rows[:max_lines]
+        rows[-1] = "…"
+    return rows
+
+
 def key_label(name: str) -> str:
     return "SPACE" if name == "space" else name.upper()
 
@@ -94,14 +151,17 @@ class App:
         self.fit_text(subtitle, 42, 105, self.width - 84)
         pygame.draw.line(self.screen, BORDER, (40, 140), (self.width - 40, 140))
 
-    def button(self, rect, label: str, *, accent=False, selected=False):
+    def button(self, rect, label: str, *, accent=False, selected=False, disabled=False):
         rect = pygame.Rect(rect)
-        hover = rect.collidepoint(pygame.mouse.get_pos())
-        fill = (35, 55, 68) if hover or selected else PANEL
+        disabled = bool(disabled)
+        hover = button_hover(rect, pygame.mouse.get_pos(), disabled=disabled)
+        fill = (35, 55, 68) if not disabled and (hover or selected) else PANEL
+        outline = MUTED if disabled else (CYAN if accent or selected else BORDER)
+        text_color = MUTED if disabled else (CYAN if accent else TEXT)
         pygame.draw.rect(self.screen, fill, rect, border_radius=12)
-        pygame.draw.rect(self.screen, CYAN if accent or selected else BORDER, rect, width=1, border_radius=12)
-        self.text(label, rect.centerx, rect.centery, 18, CYAN if accent else TEXT, center=True)
-        return rect
+        pygame.draw.rect(self.screen, outline, rect, width=1, border_radius=12)
+        self.text(label, rect.centerx, rect.centery, 18, text_color, center=True)
+        return ButtonHitArea(rect, disabled=disabled)
 
     def footer(self, value: str) -> None:
         self.fit_text(value, 40, self.height - 36, self.width - 80, 14)
@@ -123,8 +183,11 @@ class App:
     def notice(self, title: str, lines: list[str]) -> None:
         while self.running:
             self.begin(title)
-            for i, line in enumerate(lines):
-                self.fit_text(line, 48, 190 + i * 35, self.width - 96, 18, TEXT)
+            max_lines = max(1, min(12, (self.height - 320) // 35))
+            rows = wrap_notice_lines(lines, max_chars=72, max_width=self.width - 96,
+                                     font=self.fonts[18], max_lines=max_lines)
+            for i, line in enumerate(rows):
+                self.text(line, 48, 190 + i * 35, 18, TEXT)
             back = self.button((48, self.height - 110, 230, 48), "Вернуться · Enter", accent=True)
             for event in self.events():
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_RETURN):
