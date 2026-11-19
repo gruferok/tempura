@@ -10,7 +10,6 @@ import tempfile
 from typing import Any
 
 import sys
-import tempfile
 
 
 def _writable_dir(path: Path) -> bool:
@@ -59,7 +58,9 @@ def seed_from_bundle() -> None:
     if bundle_cfg.is_file() and not CONFIG_PATH.exists():
         ROOT.mkdir(parents=True, exist_ok=True)
         shutil.copy2(bundle_cfg, CONFIG_PATH)
-    # Models are not copied: they can be large and must not be duplicated; the app reads them from ROOT only.
+    # Models are not copied: they can be large and must not be duplicated. Model reads
+    # go through resolve_resource() (ROOT first, then BUNDLE_ROOT), so default models
+    # can live in the bundle without ever being copied onto the user's disk.
     for rel_dir in ("data/charts",):
         src_dir = BUNDLE_ROOT / rel_dir
         if not src_dir.is_dir():
@@ -70,6 +71,21 @@ def seed_from_bundle() -> None:
                 if not target.exists():
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, target)
+
+
+def resolve_resource(rel: str | Path) -> Path:
+    """Two-step lookup for bundled resources: user copies under ROOT first, then BUNDLE_ROOT.
+
+    Returns the first existing match; when neither exists it returns ROOT / rel,
+    the only location user code may create or write files.
+    """
+    rel = Path(rel)
+    for base in (ROOT, BUNDLE_ROOT):
+        candidate = base / rel
+        if candidate.exists():
+            return candidate
+    return ROOT / rel
+
 
 def write_json(path: str | Path, value: Any) -> Path:
     """Write beside the destination, then atomically replace it (never partial JSON)."""
