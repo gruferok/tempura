@@ -137,7 +137,9 @@ def run_menu(config: Config, audio_path: str | None = None, chart_path: str | No
                               pygame.K_4: "ai", pygame.K_a: "ai", pygame.K_b: "snap", pygame.K_o: "file",
                               pygame.K_t: "test", pygame.K_ESCAPE: "quit"}.get(event.key)
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    action = next((name for name, rect in buttons.items() if rect.collidepoint(event.pos)), None)
+                    hit = next((name for name, rect in buttons.items() if rect.collidepoint(event.pos)), None)
+                    if hit is not None:
+                        action = hit
             if not app.running:
                 break
             try:

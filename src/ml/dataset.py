@@ -19,7 +19,10 @@ from ..storage import CHART_DIR, ROOT
 from . import FEATURE_CACHE, FRAME_RATE, MAX_LANES, check_cancel, report, require_torch
 from .features import FEATURE_DIM, extract_features, frame_count
 
-torch = require_torch()
+try:  # Torch is optional at import time: training_exclusion must work without it.
+    torch = require_torch()
+except RuntimeError:
+    torch = None
 
 
 @dataclass
@@ -167,7 +170,10 @@ def load_examples(charts_dir: str | Path = CHART_DIR, *, cache_dir=FEATURE_CACHE
     return examples, skipped
 
 
-class SequenceDataset(torch.utils.data.Dataset):
+_DatasetBase = torch.utils.data.Dataset if torch is not None else object
+
+
+class SequenceDataset(_DatasetBase):
     """Full-track labels sliced into windows; no label shift at chunk boundaries."""
     def __init__(self, examples: list[TrainingExample], window_seconds: float = 10.0,
                  stride_seconds: float | None = None):
@@ -191,6 +197,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         return len(self.windows)
 
     def __getitem__(self, index):
+        torch = require_torch()
         example_index, start = self.windows[index]
         example = self.examples[example_index]
         length = min(self.window_frames, len(example.features) - start)

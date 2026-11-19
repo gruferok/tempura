@@ -9,7 +9,16 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
+import sys
+
+# Frozen (PyInstaller): user data (config.json, data/) lives beside the executable;
+# bundled read-only resources are under sys._MEIPASS.
+if getattr(sys, "frozen", False):
+    ROOT = Path(sys.executable).resolve().parent
+    BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", ROOT))
+else:
+    ROOT = Path(__file__).resolve().parents[1]
+    BUNDLE_ROOT = ROOT
 CONFIG_PATH = ROOT / "config.json"
 CHART_DIR = ROOT / "data" / "charts"
 
